@@ -1,7 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { consultSommelier } from "../lib/mockSommelier";
+
+const LOADING_MESSAGES = [
+    "あなたの言葉から、今の気分を分析しています...",
+    "新潟県内30の蔵元から、候補を探索しています...",
+    "味の構成とペアリングをシミュレーション中...",
+    "とっておきの一杯を選定しました。"
+];
+
+// Typewriter Component for "Real-time" feel
+const Typewriter = ({ text, delay = 30 }: { text: string; delay?: number }) => {
+    const [displayedText, setDisplayedText] = useState("");
+
+    useEffect(() => {
+        setDisplayedText("");
+        let i = 0;
+        const timer = setInterval(() => {
+            if (i < text.length) {
+                setDisplayedText((prev) => prev + text.charAt(i));
+                i++;
+            } else {
+                clearInterval(timer);
+            }
+        }, delay);
+        return () => clearInterval(timer);
+    }, [text, delay]);
+
+    return <span>{displayedText}</span>;
+};
 
 // Define Types for clarity
 type ChartData = {
@@ -24,16 +52,54 @@ export default function SommelierInterface() {
     const [input, setInput] = useState<string>("");
     const [loading, setLoading] = useState<boolean>(false);
     const [results, setResults] = useState<SakeResult[] | null>(null);
+    const [loadingMessage, setLoadingMessage] = useState<string>(LOADING_MESSAGES[0]);
+
+    // Cycle through loading messages
+    useEffect(() => {
+        if (!loading) return;
+
+        let step = 0;
+        setLoadingMessage(LOADING_MESSAGES[0]);
+
+        const interval = setInterval(() => {
+            step++;
+            if (step < LOADING_MESSAGES.length) {
+                setLoadingMessage(LOADING_MESSAGES[step]);
+            }
+        }, 800); // Change message every 800ms
+
+        return () => clearInterval(interval);
+    }, [loading]);
 
     const handleConsult = async () => {
         if (!input.trim()) return;
         setLoading(true);
         setResults(null);
+
         try {
-            const data = await consultSommelier(input);
+            // Attempt to call the Real AI API
+            const response = await fetch("/api/recommend", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ input }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`API Error: ${response.status}`);
+            }
+
+            const data = await response.json();
             setResults(data as SakeResult[]);
+
         } catch (e) {
-            console.error(e);
+            console.warn("AI API failed, falling back to mock logic:", e);
+            // Fallback to local logic
+            try {
+                const data = await consultSommelier(input);
+                setResults(data as SakeResult[]);
+            } catch (mockError) {
+                console.error("Mock logic failed:", mockError);
+            }
         } finally {
             setLoading(false);
         }
@@ -91,13 +157,13 @@ export default function SommelierInterface() {
                     onClick={handleConsult}
                     disabled={loading || !input.trim()}
                 >
-                    {loading ? "選定中..." : "ソムリエに相談する"}
+                    {loading ? "ソムリエが思考中..." : "ソムリエに相談する"}
                 </button>
             </div>
 
             {loading && (
-                <div className="text-xl text-sake-accent animate-pulse">
-                    <p>🍶 あなたのために、蔵元の在庫を確認しています...</p>
+                <div className="text-lg text-sake-accent animate-pulse tracking-widest my-10 min-h-[50px] flex items-center justify-center">
+                    <p>🍶 {loadingMessage}</p>
                 </div>
             )}
 
@@ -113,8 +179,8 @@ export default function SommelierInterface() {
                             </div>
 
                             <span className="text-sm text-sake-accent font-bold mb-2 block">【ソムリエの選択理由】</span>
-                            <p className="mb-8 leading-loose text-justify text-base">
-                                {sake.reason}
+                            <p className="mb-8 leading-loose text-justify text-base min-h-[80px]">
+                                <Typewriter text={sake.reason} delay={30} />
                             </p>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-[#fafafa] p-5 mb-5">
